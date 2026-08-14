@@ -1,6 +1,5 @@
 """
-Auto-generate SEO Title and Meta Description for every product
-based on its title, cleaned description, tags, and vendor.
+Auto-generate SEO Title and Meta Description for every product.
 """
 
 import re
@@ -12,12 +11,7 @@ def generate_seo_title(
     category: str = "",
     max_length: int = 70,
 ) -> str:
-    """
-    Build a concise, keyword-rich SEO title.
-
-    Format:  {Product Title} | {Category short} – {Vendor}
-    Truncated to max_length characters.
-    """
+    """Build a concise, keyword-rich SEO title."""
     title = str(title or "").strip()
     vendor = str(vendor or "").strip()
     category = str(category or "").strip()
@@ -54,14 +48,7 @@ def generate_meta_description(
     vendor: str,
     max_length: int = 160,
 ) -> str:
-    """
-    Build a compelling meta description from the plain-text description.
-
-    Strategy:
-      1. Take the first ~140 characters of the cleaned description.
-      2. Append a call-to-action with the vendor name.
-      3. Truncate cleanly at a word boundary.
-    """
+    """Build a compelling meta description from the plain-text description."""
     title = str(title or "").strip()
     vendor = str(vendor or "").strip()
     desc = str(plain_description or "").strip()
