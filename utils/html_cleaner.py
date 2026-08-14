@@ -35,30 +35,22 @@ def decode_html_entities(text: str) -> str:
 def strip_html(raw_html: str) -> str:
     """
     Convert an HTML product description to clean, readable plain text.
-
-    Preserves paragraph breaks and list formatting.
-    Removes all tags, scripts, styles, and invisible characters.
     """
     if not raw_html or not str(raw_html).strip():
         return ""
 
     text = str(raw_html)
 
-    # Remove zero-width and BOM characters
     text = re.sub(r"[\u200B-\u200D\u2060\uFEFF]", "", text)
 
-    # Decode entities before parsing (handles double-encoded content)
     for _ in range(3):
         text = decode_html_entities(text)
 
-    # Use BeautifulSoup for robust tag removal
     soup = BeautifulSoup(text, "lxml")
 
-    # Remove script, style, noscript entirely
     for tag in soup.find_all(["script", "style", "noscript"]):
         tag.decompose()
 
-    # Insert structural whitespace before extracting text
     for br in soup.find_all("br"):
         br.replace_with("\n")
     for tag_name in ["p", "div", "h1", "h2", "h3", "h4", "h5", "h6"]:
@@ -73,7 +65,6 @@ def strip_html(raw_html: str) -> str:
 
     plain = soup.get_text()
 
-    # Final cleanup
     plain = decode_html_entities(plain)
     plain = re.sub(r"\r", "\n", plain)
     plain = re.sub(r"[ \t]+", " ", plain)
