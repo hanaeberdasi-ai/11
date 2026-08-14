@@ -5,10 +5,13 @@ Upload a Shopify products CSV → get a cleaned, optimised CSV back.
 
 Features:
   • Removes products and variants without valid images
+  • Fixes image URLs to prevent Shopify "Media processing failed" errors
   • Updates vendor name across all products
   • Converts HTML descriptions to clean plain text
   • Auto-generates SEO Title and Meta Description
   • Sets a uniform product category
+  • Custom stock quantity
+  • Adjustable price discount with compare-at price
   • Downloads the refined CSV ready for Shopify import
 """
 
@@ -73,6 +76,13 @@ st.markdown(
     .warning-box {
         background: #3a2a00;
         border: 1px solid #f0a500;
+        border-radius: 10px;
+        padding: 1rem 1.5rem;
+        margin: 1rem 0;
+    }
+    .info-box {
+        background: #0d2033;
+        border: 1px solid #2196F3;
         border-radius: 10px;
         padding: 1rem 1.5rem;
         margin: 1rem 0;
@@ -146,13 +156,57 @@ if uploaded_file is not None:
 
     st.markdown("")
 
+    col3, col4 = st.columns(2)
+
+    with col3:
+        stock_quantity = st.number_input(
+            "📦 Stock Quantity",
+            min_value=0,
+            max_value=999999,
+            value=50,
+            step=1,
+            help="Set this inventory quantity on every product variant.",
+        )
+
+    with col4:
+        discount_percent = st.slider(
+            "💰 Price Discount (%)",
+            min_value=0,
+            max_value=90,
+            value=0,
+            step=5,
+            help=(
+                "Reduce all variant prices by this percentage. "
+                "The original price is saved as the 'Compare At Price' so customers see the discount."
+            ),
+        )
+
+    # Show price preview
+    if discount_percent > 0:
+        example_price = 100.00
+        new_price = round(example_price * (100 - discount_percent) / 100, 2)
+        st.markdown(
+            f'<div class="info-box">'
+            f"💡 <strong>Price preview:</strong> A ${example_price:.2f} product becomes "
+            f"<strong>${new_price:.2f}</strong> (−{discount_percent}%). "
+            f"The original ${example_price:.2f} is stored as the Compare At Price."
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("")
+
     # Summary of what will happen
     st.markdown("#### 🔧 The tool will automatically:")
     checks = [
         "Remove all products (and their variants) that have **no valid image**",
+        "**Fix image URLs** — strip size suffixes, query params, convert .webp (prevents Shopify media errors)",
         "**Clean descriptions** — convert HTML to readable plain text",
         "**Generate SEO Title** and **Meta Description** for every product",
+        f"Set **Stock Quantity** to `{stock_quantity}` on all variants",
     ]
+    if discount_percent > 0:
+        checks.append(f"Apply **{discount_percent}% price discount** (original saved as Compare At Price)")
     if vendor_name.strip():
         checks.append(f'Set **Vendor** to `{vendor_name.strip()}` on all products')
     if product_category.strip():
@@ -178,6 +232,8 @@ if uploaded_file is not None:
                 raw_df.copy(),
                 vendor=vendor_name.strip(),
                 category=product_category.strip(),
+                stock_quantity=int(stock_quantity),
+                discount_percent=int(discount_percent),
             )
 
         # ──────────────────────────────────────
@@ -186,7 +242,7 @@ if uploaded_file is not None:
         st.markdown("")
         st.markdown("#### 📊 Processing Results")
 
-        c1, c2, c3, c4, c5 = st.columns(5)
+        c1, c2, c3, c4 = st.columns(4)
 
         with c1:
             st.markdown(
@@ -212,15 +268,41 @@ if uploaded_file is not None:
         with c4:
             st.markdown(
                 f'<div class="stat-card">'
+                f'<div class="stat-number">{stats["images_cleaned"]:,}</div>'
+                f'<div class="stat-label">Image URLs<br>Fixed</div></div>',
+                unsafe_allow_html=True,
+            )
+
+        st.markdown("")
+
+        c5, c6, c7, c8 = st.columns(4)
+
+        with c5:
+            st.markdown(
+                f'<div class="stat-card">'
                 f'<div class="stat-number">{stats["descriptions_cleaned"]:,}</div>'
                 f'<div class="stat-label">Descriptions<br>Cleaned</div></div>',
                 unsafe_allow_html=True,
             )
-        with c5:
+        with c6:
             st.markdown(
                 f'<div class="stat-card">'
                 f'<div class="stat-number">{stats["seo_generated"]:,}</div>'
                 f'<div class="stat-label">SEO Tags<br>Generated</div></div>',
+                unsafe_allow_html=True,
+            )
+        with c7:
+            st.markdown(
+                f'<div class="stat-card">'
+                f'<div class="stat-number">{stats["prices_discounted"]:,}</div>'
+                f'<div class="stat-label">Prices<br>Discounted</div></div>',
+                unsafe_allow_html=True,
+            )
+        with c8:
+            st.markdown(
+                f'<div class="stat-card">'
+                f'<div class="stat-number">{stats["stock_updated"]:,}</div>'
+                f'<div class="stat-label">Stock Rows<br>Updated</div></div>',
                 unsafe_allow_html=True,
             )
 
@@ -234,24 +316,45 @@ if uploaded_file is not None:
                 unsafe_allow_html=True,
             )
 
+        if stats["images_cleaned"] > 0:
+            st.markdown(
+                f'<div class="info-box">🖼️ <strong>{stats["images_cleaned"]}</strong> '
+                f"image URLs were fixed (removed size suffixes, query params, etc.) "
+                f"to prevent Shopify \"Media processing failed\" errors.</div>",
+                unsafe_allow_html=True,
+            )
+
+        summary_items = [
+            "• Products without images removed",
+            "• Image URLs cleaned and fixed for Shopify compatibility",
+            "• HTML descriptions converted to plain text",
+            "• SEO Title & Meta Description generated",
+            f"• Stock quantity set to <strong>{stock_quantity}</strong>",
+        ]
+        if discount_percent > 0:
+            summary_items.append(
+                f"• Prices reduced by <strong>{discount_percent}%</strong> (originals saved as Compare At Price)"
+            )
+        if vendor_name.strip():
+            summary_items.append(f"• Vendor set to <strong>{vendor_name.strip()}</strong>")
+        if product_category.strip():
+            summary_items.append(f"• Category set to <strong>{product_category.strip()}</strong>")
+
         st.markdown(
             '<div class="success-box">✅ All refinements applied successfully:<br>'
-            "• Products without images removed<br>"
-            "• HTML descriptions converted to plain text<br>"
-            "• SEO Title & Meta Description generated<br>"
-            + (f"• Vendor set to <strong>{vendor_name.strip()}</strong><br>" if vendor_name.strip() else "")
-            + (f"• Category set to <strong>{product_category.strip()}</strong><br>" if product_category.strip() else "")
+            + "<br>".join(summary_items)
             + "</div>",
             unsafe_allow_html=True,
         )
 
         # Preview
         with st.expander("👀 Preview refined data (first 15 rows)", expanded=True):
-            # Show key columns
             key_cols = []
             for c in [
                 "Handle", "Title", "Body (HTML)", "Vendor", "Type",
                 "Product Category", "SEO Title", "SEO Description",
+                "Variant Price", "Variant Compare At Price",
+                "Variant Inventory Qty",
                 "Image Src", "Variant Image",
             ]:
                 col_map = {col.strip().lower(): col for col in processed_df.columns}
@@ -308,11 +411,14 @@ else:
         """
         | Feature | Description |
         |---------|-------------|
-        | 🖼️ **Image Validation** | Removes products & variants with no valid image URL |
-        | 🏪 **Vendor Update** | Sets a uniform vendor/store name across all products |
+        | 🖼️ **Image Validation** | Removes products with no valid images |
+        | 🔧 **Image URL Fixing** | Strips size suffixes & query params that cause Shopify errors |
+        | 🏪 **Vendor Update** | Sets a uniform vendor/store name |
         | 📝 **Description Cleanup** | Strips HTML tags → clean plain text |
         | 🔍 **SEO Generation** | Auto-creates SEO Title & Meta Description |
         | 📂 **Category Assignment** | Sets your chosen category on every product |
-        | 📥 **CSV Export** | Download the refined file ready for Shopify import |
+        | 📦 **Stock Quantity** | Sets inventory count on all variants |
+        | 💰 **Price Discount** | Reduces prices by a percentage with Compare At Price |
+        | 📥 **CSV Export** | Downloads the refined file ready for Shopify import |
         """
     )
