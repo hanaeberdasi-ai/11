@@ -13,10 +13,8 @@ def decode_html_entities(text: str) -> str:
     if not text:
         return ""
 
-    # Use Python's built-in html.unescape (handles all entity types)
     result = html.unescape(text)
 
-    # Catch any remaining numeric entities that slipped through
     result = re.sub(
         r"&#(\d+);",
         lambda m: chr(int(m.group(1))) if int(m.group(1)) < 0x110000 else " ",
