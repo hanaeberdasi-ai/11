@@ -25,7 +25,6 @@ def generate_seo_title(
     if not title:
         return ""
 
-    # Use the last segment of the category taxonomy as a short label
     category_short = ""
     if category:
         parts = [p.strip() for p in category.split(">")]
@@ -41,7 +40,6 @@ def generate_seo_title(
         seo = title
 
     if len(seo) > max_length:
-        # Prefer keeping title + vendor
         fallback = f"{title} – {vendor}" if vendor else title
         if len(fallback) > max_length:
             return fallback[: max_length - 1].rstrip() + "…"
@@ -71,7 +69,6 @@ def generate_meta_description(
     if not desc and not title:
         return ""
 
-    # If no description, build one from the title
     if not desc:
         base = f"Shop {title}"
         if vendor:
@@ -79,10 +76,8 @@ def generate_meta_description(
         base += ". Fast shipping & great deals!"
         return base[:max_length]
 
-    # Collapse whitespace / newlines into single spaces
     desc = re.sub(r"\s+", " ", desc).strip()
 
-    # Reserve room for the CTA suffix
     cta = f" Shop now at {vendor}!" if vendor else ""
     budget = max_length - len(cta)
 
@@ -90,7 +85,6 @@ def generate_meta_description(
         budget = max_length
         cta = ""
 
-    # Grab the first `budget` characters, break at last full word
     snippet = desc[:budget]
     if len(desc) > budget:
         last_space = snippet.rfind(" ")
