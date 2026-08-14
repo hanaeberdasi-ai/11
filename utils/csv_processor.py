@@ -9,7 +9,8 @@ Core processing pipeline:
   7. Set the product category for all rows.
   8. Set stock quantity.
   9. Apply price discount.
-  10. Return the refined DataFrame ready for download.
+  10. Ensure all required Shopify fields are populated.
+  11. Return the refined DataFrame ready for download.
 """
 
 import pandas as pd
@@ -24,10 +25,19 @@ def _col(df: pd.DataFrame, name: str):
     return mapping.get(name.strip().lower())
 
 
+def _ensure_col(df: pd.DataFrame, name: str) -> str:
+    """Ensure a column exists in the DataFrame. Returns the column name."""
+    existing = _col(df, name)
+    if existing:
+        return existing
+    df[name] = ""
+    return name
+
+
 def _parse_price(value) -> float:
     """Parse a price string into a float. Returns -1 if invalid."""
     if isinstance(value, (int, float)):
-        return float(value) if value == value else -1.0  # NaN check
+        return float(value) if value == value else -1.0
 
     text = str(value or "").strip()
     text = text.replace(" ", "").replace("$", "").replace("€", "").replace("£", "")
@@ -35,7 +45,6 @@ def _parse_price(value) -> float:
     if not text:
         return -1.0
 
-    # Handle comma as decimal separator (e.g. "19,99" with no dot)
     if "," in text and "." not in text and len(text.split(",")[-1]) <= 2:
         text = text.replace(",", ".")
     else:
@@ -43,7 +52,7 @@ def _parse_price(value) -> float:
 
     try:
         val = float(text)
-        return val if val == val else -1.0  # NaN check
+        return val if val == val else -1.0
     except (ValueError, OverflowError):
         return -1.0
 
@@ -83,27 +92,41 @@ def process_csv(
         "stock_updated": 0,
     }
 
-    handle_col = _col(df, "Handle")
-    title_col = _col(df, "Title")
-    body_col = _col(df, "Body (HTML)")
-    vendor_col = _col(df, "Vendor")
-    type_col = _col(df, "Type")
-    image_src_col = _col(df, "Image Src")
-    variant_image_col = _col(df, "Variant Image")
-    seo_title_col = _col(df, "SEO Title")
-    seo_desc_col = _col(df, "SEO Description")
-    tags_col = _col(df, "Tags")
+    # ------------------------------------------------------------------
+    # Ensure ALL required Shopify columns exist before processing
+    # ------------------------------------------------------------------
+    handle_col = _ensure_col(df, "Handle")
+    title_col = _ensure_col(df, "Title")
+    body_col = _ensure_col(df, "Body (HTML)")
+    vendor_col = _ensure_col(df, "Vendor")
+    type_col = _ensure_col(df, "Type")
+    tags_col = _ensure_col(df, "Tags")
+    published_col = _ensure_col(df, "Published")
+    image_src_col = _ensure_col(df, "Image Src")
+    image_pos_col = _ensure_col(df, "Image Position")
+    image_alt_col = _ensure_col(df, "Image Alt Text")
+    variant_image_col = _ensure_col(df, "Variant Image")
+    seo_title_col = _ensure_col(df, "SEO Title")
+    seo_desc_col = _ensure_col(df, "SEO Description")
+    variant_price_col = _ensure_col(df, "Variant Price")
+    compare_price_col = _ensure_col(df, "Variant Compare At Price")
+    inventory_qty_col = _ensure_col(df, "Variant Inventory Qty")
+    product_cat_col = _ensure_col(df, "Product Category")
+    google_cat_col = _ensure_col(df, "Google Shopping / Google Product Category")
 
-    # Price columns
-    variant_price_col = _col(df, "Variant Price")
-    compare_price_col = _col(df, "Variant Compare At Price")
-
-    # Inventory columns
-    inventory_qty_col = _col(df, "Variant Inventory Qty")
-
-    # Category columns
-    product_cat_col = _col(df, "Product Category")
-    google_cat_col = _col(df, "Google Shopping / Google Product Category")
+    # Critical columns that cause Shopify import errors if missing/empty
+    variant_sku_col = _ensure_col(df, "Variant SKU")
+    variant_grams_col = _ensure_col(df, "Variant Grams")
+    variant_inv_tracker_col = _ensure_col(df, "Variant Inventory Tracker")
+    variant_inv_policy_col = _ensure_col(df, "Variant Inventory Policy")
+    variant_fulfillment_col = _ensure_col(df, "Variant Fulfillment Service")
+    variant_requires_shipping_col = _ensure_col(df, "Variant Requires Shipping")
+    variant_taxable_col = _ensure_col(df, "Variant Taxable")
+    variant_weight_unit_col = _ensure_col(df, "Variant Weight Unit")
+    gift_card_col = _ensure_col(df, "Gift Card")
+    status_col = _ensure_col(df, "Status")
+    option1_name_col = _ensure_col(df, "Option1 Name")
+    option1_value_col = _ensure_col(df, "Option1 Value")
 
     if handle_col:
         stats["original_products"] = df[handle_col].nunique()
@@ -115,7 +138,7 @@ def process_csv(
     stats["rows_removed_no_image"] = removed
 
     # ------------------------------------------------------------------
-    # STEP 2: Clean ALL image URLs (fix size suffixes, query params, etc.)
+    # STEP 2: Clean ALL image URLs
     # ------------------------------------------------------------------
     images_cleaned = 0
 
@@ -140,7 +163,7 @@ def process_csv(
     # ------------------------------------------------------------------
     # STEP 3: Update vendor on product rows
     # ------------------------------------------------------------------
-    if vendor_col and vendor:
+    if vendor:
         if title_col:
             mask = df[title_col].apply(lambda v: str(v).strip() != "")
             df.loc[mask, vendor_col] = vendor
@@ -166,13 +189,6 @@ def process_csv(
     # STEP 5: Generate SEO Title + Meta Description for product rows
     # ------------------------------------------------------------------
     if title_col:
-        if not seo_title_col:
-            seo_title_col = "SEO Title"
-            df[seo_title_col] = ""
-        if not seo_desc_col:
-            seo_desc_col = "SEO Description"
-            df[seo_desc_col] = ""
-
         seo_count = 0
         for idx in df.index:
             title_val = str(df.at[idx, title_col]).strip()
@@ -204,12 +220,7 @@ def process_csv(
         else:
             product_mask = pd.Series(True, index=df.index)
 
-        if type_col:
-            df.loc[product_mask, type_col] = category
-
-        if not product_cat_col:
-            product_cat_col = "Product Category"
-            df[product_cat_col] = ""
+        df.loc[product_mask, type_col] = category
         df.loc[product_mask, product_cat_col] = category
 
         if google_cat_col:
@@ -218,14 +229,8 @@ def process_csv(
     # ------------------------------------------------------------------
     # STEP 7: Set stock quantity
     # ------------------------------------------------------------------
-    if inventory_qty_col:
-        df[inventory_qty_col] = stock_quantity
-        stats["stock_updated"] = len(df)
-    else:
-        # Create the column if it doesn't exist
-        inventory_qty_col = "Variant Inventory Qty"
-        df[inventory_qty_col] = stock_quantity
-        stats["stock_updated"] = len(df)
+    df[inventory_qty_col] = stock_quantity
+    stats["stock_updated"] = len(df)
 
     # ------------------------------------------------------------------
     # STEP 8: Apply price discount
@@ -238,20 +243,102 @@ def process_csv(
             original_price = _parse_price(df.at[idx, variant_price_col])
             if original_price > 0:
                 new_price = round(original_price * multiplier, 2)
-
-                # Store original price as compare-at price
-                if compare_price_col:
-                    df.at[idx, compare_price_col] = f"{original_price:.2f}"
-                else:
-                    if "Variant Compare At Price" not in df.columns:
-                        df["Variant Compare At Price"] = ""
-                        compare_price_col = "Variant Compare At Price"
-                    df.at[idx, "Variant Compare At Price"] = f"{original_price:.2f}"
-
+                df.at[idx, compare_price_col] = f"{original_price:.2f}"
                 df.at[idx, variant_price_col] = f"{new_price:.2f}"
                 prices_discounted += 1
 
         stats["prices_discounted"] = prices_discounted
+
+    # ------------------------------------------------------------------
+    # STEP 9: Fill ALL required Shopify fields to prevent import errors
+    #
+    # Shopify will reject the CSV if these are blank:
+    #   - Variant Fulfillment Service  → must be "manual"
+    #   - Variant Inventory Policy     → must be "deny" or "continue"
+    #   - Variant Inventory Tracker    → "shopify" or blank
+    #   - Variant Requires Shipping    → "TRUE" or "FALSE"
+    #   - Variant Taxable              → "TRUE" or "FALSE"
+    #   - Variant Grams                → numeric or 0
+    #   - Variant Weight Unit          → "g", "kg", "lb", "oz"
+    #   - Published                    → "TRUE" or "FALSE"
+    #   - Status                       → "active", "draft", or "archived"
+    #   - Gift Card                    → "TRUE" or "FALSE"
+    #   - Option1 Name / Value         → at minimum "Title" / "Default Title"
+    # ------------------------------------------------------------------
+
+    for idx in df.index:
+        is_product_row = str(df.at[idx, title_col]).strip() != ""
+
+        # ── Variant Fulfillment Service (REQUIRED — cannot be blank) ──
+        current_fulfillment = str(df.at[idx, variant_fulfillment_col]).strip().lower()
+        if current_fulfillment not in ("manual", "shopify", "gift_card"):
+            # Check if there's any third-party fulfillment service name
+            if not current_fulfillment or current_fulfillment in ("", "nan", "none"):
+                df.at[idx, variant_fulfillment_col] = "manual"
+
+        # ── Variant Inventory Policy (REQUIRED — must be "deny" or "continue") ──
+        current_policy = str(df.at[idx, variant_inv_policy_col]).strip().lower()
+        if current_policy not in ("deny", "continue"):
+            df.at[idx, variant_inv_policy_col] = "deny"
+
+        # ── Variant Inventory Tracker ──
+        current_tracker = str(df.at[idx, variant_inv_tracker_col]).strip().lower()
+        if current_tracker not in ("shopify", "shipwire", "amazon_marketplace_web", ""):
+            df.at[idx, variant_inv_tracker_col] = "shopify"
+        if not current_tracker or current_tracker in ("nan", "none"):
+            df.at[idx, variant_inv_tracker_col] = "shopify"
+
+        # ── Variant Requires Shipping ──
+        current_shipping = str(df.at[idx, variant_requires_shipping_col]).strip().upper()
+        if current_shipping not in ("TRUE", "FALSE"):
+            df.at[idx, variant_requires_shipping_col] = "TRUE"
+
+        # ── Variant Taxable ──
+        current_taxable = str(df.at[idx, variant_taxable_col]).strip().upper()
+        if current_taxable not in ("TRUE", "FALSE"):
+            df.at[idx, variant_taxable_col] = "TRUE"
+
+        # ── Variant Grams ──
+        current_grams = str(df.at[idx, variant_grams_col]).strip()
+        try:
+            grams_val = float(current_grams)
+            if grams_val != grams_val:  # NaN
+                df.at[idx, variant_grams_col] = "0"
+        except (ValueError, TypeError):
+            if not current_grams or current_grams.lower() in ("nan", "none", ""):
+                df.at[idx, variant_grams_col] = "0"
+
+        # ── Variant Weight Unit ──
+        current_weight_unit = str(df.at[idx, variant_weight_unit_col]).strip().lower()
+        if current_weight_unit not in ("g", "kg", "lb", "oz"):
+            df.at[idx, variant_weight_unit_col] = "g"
+
+        # ── Product-row-only fields ──
+        if is_product_row:
+            # Published
+            current_published = str(df.at[idx, published_col]).strip().upper()
+            if current_published not in ("TRUE", "FALSE"):
+                df.at[idx, published_col] = "TRUE"
+
+            # Status
+            current_status = str(df.at[idx, status_col]).strip().lower()
+            if current_status not in ("active", "draft", "archived"):
+                df.at[idx, status_col] = "active"
+
+            # Gift Card
+            current_gift = str(df.at[idx, gift_card_col]).strip().upper()
+            if current_gift not in ("TRUE", "FALSE"):
+                df.at[idx, gift_card_col] = "FALSE"
+
+            # Option1 Name — must have at least one option
+            current_opt_name = str(df.at[idx, option1_name_col]).strip()
+            if not current_opt_name or current_opt_name.lower() in ("nan", "none", ""):
+                df.at[idx, option1_name_col] = "Title"
+
+            # Option1 Value
+            current_opt_value = str(df.at[idx, option1_value_col]).strip()
+            if not current_opt_value or current_opt_value.lower() in ("nan", "none", ""):
+                df.at[idx, option1_value_col] = "Default Title"
 
     # ------------------------------------------------------------------
     # Final stats
