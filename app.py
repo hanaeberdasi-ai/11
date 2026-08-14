@@ -1,18 +1,5 @@
 """
 Shopify Product CSV Refiner — Streamlit App
-============================================
-Upload a Shopify products CSV → get a cleaned, optimised CSV back.
-
-Features:
-  • Removes products and variants without valid images
-  • Fixes image URLs to prevent Shopify "Media processing failed" errors
-  • Updates vendor name across all products
-  • Converts HTML descriptions to clean plain text
-  • Auto-generates SEO Title and Meta Description
-  • Sets a uniform product category
-  • Custom stock quantity
-  • Adjustable price discount with compare-at price
-  • Downloads the refined CSV ready for Shopify import
 """
 
 import streamlit as st
@@ -20,19 +7,12 @@ import pandas as pd
 import io
 from utils.csv_processor import process_csv
 
-
-# ──────────────────────────────────────────────
-# PAGE CONFIG
-# ──────────────────────────────────────────────
 st.set_page_config(
     page_title="Shopify CSV Refiner",
     page_icon="🛍️",
     layout="wide",
 )
 
-# ──────────────────────────────────────────────
-# CUSTOM STYLING
-# ──────────────────────────────────────────────
 st.markdown(
     """
     <style>
@@ -92,10 +72,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-
-# ──────────────────────────────────────────────
-# HEADER
-# ──────────────────────────────────────────────
 st.markdown('<div class="main-header">🛍️ Shopify CSV Refiner</div>', unsafe_allow_html=True)
 st.markdown(
     '<div class="sub-header">Upload your Shopify products CSV → get a cleaned, '
@@ -105,9 +81,7 @@ st.markdown(
 
 st.divider()
 
-# ──────────────────────────────────────────────
-# STEP 1 — FILE UPLOAD
-# ──────────────────────────────────────────────
+# ── STEP 1 — FILE UPLOAD ──
 st.markdown("### 📁 Step 1 — Upload your Shopify Products CSV")
 
 uploaded_file = st.file_uploader(
@@ -117,7 +91,6 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file is not None:
-    # Read the CSV
     try:
         raw_df = pd.read_csv(uploaded_file, dtype=str, keep_default_na=False)
     except Exception as e:
@@ -131,9 +104,7 @@ if uploaded_file is not None:
 
     st.divider()
 
-    # ──────────────────────────────────────────
-    # STEP 2 — CONFIGURATION
-    # ──────────────────────────────────────────
+    # ── STEP 2 — CONFIGURATION ──
     st.markdown("### ⚙️ Step 2 — Configure your refinements")
 
     col1, col2 = st.columns(2)
@@ -151,7 +122,7 @@ if uploaded_file is not None:
             "📂 Product Category",
             value="",
             placeholder="e.g. Health & Beauty > Personal Care",
-            help="This category will be set on every product's Type and Product Category columns.",
+            help="This category will be set on every product.",
         )
 
     st.markdown("")
@@ -177,11 +148,10 @@ if uploaded_file is not None:
             step=5,
             help=(
                 "Reduce all variant prices by this percentage. "
-                "The original price is saved as the 'Compare At Price' so customers see the discount."
+                "The original price is saved as the Compare At Price."
             ),
         )
 
-    # Show price preview
     if discount_percent > 0:
         example_price = 100.00
         new_price = round(example_price * (100 - discount_percent) / 100, 2)
@@ -196,19 +166,19 @@ if uploaded_file is not None:
 
     st.markdown("")
 
-    # Summary of what will happen
     st.markdown("#### 🔧 The tool will automatically:")
     checks = [
         "Remove all products (and their variants) that have **no valid image**",
-        "**Fix image URLs** — strip size suffixes, query params, convert .webp (prevents Shopify media errors)",
+        "**Fix image URLs** — strip size suffixes, query params, convert .webp",
         "**Clean descriptions** — convert HTML to readable plain text",
         "**Generate SEO Title** and **Meta Description** for every product",
         f"Set **Stock Quantity** to `{stock_quantity}` on all variants",
+        "**Fill all required Shopify fields** — fulfillment service, inventory policy, etc.",
     ]
     if discount_percent > 0:
         checks.append(f"Apply **{discount_percent}% price discount** (original saved as Compare At Price)")
     if vendor_name.strip():
-        checks.append(f'Set **Vendor** to `{vendor_name.strip()}` on all products')
+        checks.append(f'Set **Vendor** to `{vendor_name.strip()}`')
     if product_category.strip():
         checks.append(f'Set **Product Category** to `{product_category.strip()}`')
 
@@ -217,15 +187,13 @@ if uploaded_file is not None:
 
     st.divider()
 
-    # ──────────────────────────────────────────
-    # STEP 3 — PROCESS
-    # ──────────────────────────────────────────
+    # ── STEP 3 — PROCESS ──
     st.markdown("### 🚀 Step 3 — Process & Download")
 
     if st.button("🔄 Process CSV", type="primary", use_container_width=True):
 
         if not vendor_name.strip():
-            st.warning("⚠️ You haven't entered a vendor name. The existing vendor values will be kept.")
+            st.warning("⚠️ No vendor name entered. Existing vendor values will be kept.")
 
         with st.spinner("Processing… this may take a moment for large files."):
             processed_df, stats = process_csv(
@@ -236,9 +204,7 @@ if uploaded_file is not None:
                 discount_percent=int(discount_percent),
             )
 
-        # ──────────────────────────────────────
-        # STATS DISPLAY
-        # ──────────────────────────────────────
+        # ── STATS ──
         st.markdown("")
         st.markdown("#### 📊 Processing Results")
 
@@ -308,7 +274,6 @@ if uploaded_file is not None:
 
         st.markdown("")
 
-        # Summary boxes
         if stats["rows_removed_no_image"] > 0:
             st.markdown(
                 f'<div class="warning-box">⚠️ <strong>{stats["rows_removed_no_image"]}</strong> '
@@ -319,21 +284,21 @@ if uploaded_file is not None:
         if stats["images_cleaned"] > 0:
             st.markdown(
                 f'<div class="info-box">🖼️ <strong>{stats["images_cleaned"]}</strong> '
-                f"image URLs were fixed (removed size suffixes, query params, etc.) "
-                f"to prevent Shopify \"Media processing failed\" errors.</div>",
+                f"image URLs were fixed to prevent Shopify \"Media processing failed\" errors.</div>",
                 unsafe_allow_html=True,
             )
 
         summary_items = [
             "• Products without images removed",
-            "• Image URLs cleaned and fixed for Shopify compatibility",
+            "• Image URLs cleaned for Shopify compatibility",
             "• HTML descriptions converted to plain text",
             "• SEO Title & Meta Description generated",
             f"• Stock quantity set to <strong>{stock_quantity}</strong>",
+            "• All required Shopify fields populated (fulfillment, inventory policy, etc.)",
         ]
         if discount_percent > 0:
             summary_items.append(
-                f"• Prices reduced by <strong>{discount_percent}%</strong> (originals saved as Compare At Price)"
+                f"• Prices reduced by <strong>{discount_percent}%</strong>"
             )
         if vendor_name.strip():
             summary_items.append(f"• Vendor set to <strong>{vendor_name.strip()}</strong>")
@@ -347,15 +312,15 @@ if uploaded_file is not None:
             unsafe_allow_html=True,
         )
 
-        # Preview
         with st.expander("👀 Preview refined data (first 15 rows)", expanded=True):
             key_cols = []
             for c in [
                 "Handle", "Title", "Body (HTML)", "Vendor", "Type",
                 "Product Category", "SEO Title", "SEO Description",
                 "Variant Price", "Variant Compare At Price",
-                "Variant Inventory Qty",
-                "Image Src", "Variant Image",
+                "Variant Inventory Qty", "Variant Fulfillment Service",
+                "Variant Inventory Policy",
+                "Image Src", "Variant Image", "Status",
             ]:
                 col_map = {col.strip().lower(): col for col in processed_df.columns}
                 actual = col_map.get(c.strip().lower())
@@ -370,9 +335,7 @@ if uploaded_file is not None:
             else:
                 st.dataframe(processed_df.head(15), use_container_width=True)
 
-        # ──────────────────────────────────────
-        # DOWNLOAD
-        # ──────────────────────────────────────
+        # ── DOWNLOAD ──
         st.markdown("")
         st.markdown("#### 📥 Download Refined CSV")
 
@@ -395,7 +358,6 @@ if uploaded_file is not None:
         )
 
 else:
-    # No file uploaded yet — show instructions
     st.info(
         "👆 Upload a Shopify products CSV to get started.\n\n"
         "**How to export from Shopify:**\n"
@@ -412,13 +374,14 @@ else:
         | Feature | Description |
         |---------|-------------|
         | 🖼️ **Image Validation** | Removes products with no valid images |
-        | 🔧 **Image URL Fixing** | Strips size suffixes & query params that cause Shopify errors |
+        | 🔧 **Image URL Fixing** | Prevents Shopify "Media processing failed" |
         | 🏪 **Vendor Update** | Sets a uniform vendor/store name |
-        | 📝 **Description Cleanup** | Strips HTML tags → clean plain text |
+        | 📝 **Description Cleanup** | Strips HTML → clean plain text |
         | 🔍 **SEO Generation** | Auto-creates SEO Title & Meta Description |
         | 📂 **Category Assignment** | Sets your chosen category on every product |
         | 📦 **Stock Quantity** | Sets inventory count on all variants |
-        | 💰 **Price Discount** | Reduces prices by a percentage with Compare At Price |
-        | 📥 **CSV Export** | Downloads the refined file ready for Shopify import |
+        | 💰 **Price Discount** | Reduces prices with Compare At Price |
+        | ✅ **Shopify Validation** | Fills all required fields to prevent import errors |
+        | 📥 **CSV Export** | Ready for Shopify import |
         """
     )
