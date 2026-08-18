@@ -251,8 +251,11 @@ def process_csv(
 
     # ------------------------------------------------------------------
     # STEP 8: Set stock quantity
+    #   NOTE: assign as string, not int — so the column stays object dtype
+    #   and can later be blanked ("") on additional image rows without a
+    #   pandas 2.x TypeError.
     # ------------------------------------------------------------------
-    df[inventory_qty_col] = stock_quantity
+    df[inventory_qty_col] = str(int(stock_quantity))
     stats["stock_updated"] = len(df)
 
     # ------------------------------------------------------------------
@@ -261,6 +264,10 @@ def process_csv(
     if discount_percent > 0 and variant_price_col:
         multiplier = (100 - discount_percent) / 100.0
         prices_discounted = 0
+
+        # Force to object dtype so we can freely write strings
+        df[variant_price_col] = df[variant_price_col].astype(object)
+        df[compare_price_col] = df[compare_price_col].astype(object)
 
         for idx in df.index:
             original_price = _parse_price(df.at[idx, variant_price_col])
@@ -357,14 +364,13 @@ def process_csv(
     # each Handle, keeping only the image-related fields.
     # ------------------------------------------------------------------
     if handle_col:
-        # Sort so rows of the same product stay together, preserving order
         df = df.reset_index(drop=True)
 
         # Identify the FIRST occurrence of each Handle
         first_row_mask = ~df[handle_col].duplicated(keep="first")
         additional_row_mask = ~first_row_mask
 
-        # Also: rows with an EMPTY Handle should just be left alone
+        # Rows with an EMPTY Handle: leave them alone
         empty_handle_mask = df[handle_col].apply(lambda v: str(v).strip() == "")
         additional_row_mask = additional_row_mask & (~empty_handle_mask)
 
@@ -389,7 +395,7 @@ def process_csv(
             variant_sku_col,
             variant_grams_col,
             variant_inv_tracker_col,
-            variant_inv_qty := inventory_qty_col,
+            inventory_qty_col,
             variant_inv_policy_col,
             variant_fulfillment_col,
             variant_price_col,
@@ -400,7 +406,7 @@ def process_csv(
             variant_image_col,
         ]
 
-        # Also blank Option2/Option3 if they exist
+        # Also blank Option2/Option3 and other optional columns if they exist
         for extra_opt in [
             "Option2 Name", "Option2 Value", "Option2 Linked To",
             "Option3 Name", "Option3 Value", "Option3 Linked To",
@@ -425,12 +431,24 @@ def process_csv(
             if actual:
                 cols_to_blank_on_extra_rows.append(actual)
 
-        # De-duplicate and drop Nones
+        # De-duplicate and drop Nones / empties
         cols_to_blank_on_extra_rows = [
             c for c in dict.fromkeys(cols_to_blank_on_extra_rows) if c
         ]
 
-        # Do the blanking
+        # ── THE FIX ──
+        # Cast every target column to object dtype BEFORE writing "" into it.
+        # pandas 2.x refuses to silently downcast a numeric column to hold
+        # strings, so we make sure the column can hold strings first.
+        for col in cols_to_blank_on_extra_rows:
+            if col in df.columns:
+                try:
+                    df[col] = df[col].astype(object)
+                except Exception:
+                    # Fallback: force via str conversion
+                    df[col] = df[col].apply(lambda v: "" if pd.isna(v) else str(v))
+
+        # Now safely blank the additional image rows
         for col in cols_to_blank_on_extra_rows:
             if col in df.columns:
                 df.loc[additional_row_mask, col] = ""
