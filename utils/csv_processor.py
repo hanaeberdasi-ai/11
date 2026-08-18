@@ -11,7 +11,10 @@ Core processing pipeline:
   9. Set stock quantity.
   10. Apply price discount.
   11. Ensure all required Shopify fields are populated.
-  12. Return the refined DataFrame ready for download.
+  12. Collapse duplicate variant rows so only the FIRST row per Handle carries
+      variant/product data — additional rows carry ONLY extra images.
+      (Prevents "The variant 'Default Title' already exists" errors on import.)
+  13. Return the refined DataFrame ready for download.
 """
 
 import pandas as pd
@@ -100,6 +103,7 @@ def process_csv(
         "seo_generated": 0,
         "prices_discounted": 0,
         "stock_updated": 0,
+        "duplicate_variant_rows_fixed": 0,
     }
 
     # Ensure ALL required Shopify columns exist
@@ -335,6 +339,101 @@ def process_csv(
             current = str(df.at[idx, option1_value_col]).strip()
             if not current or current.lower() in ("nan", "none", ""):
                 df.at[idx, option1_value_col] = "Default Title"
+
+    # ------------------------------------------------------------------
+    # STEP 11: CRITICAL — Collapse duplicate variant rows.
+    #
+    # In Shopify's CSV format:
+    #   • The FIRST row for a given Handle carries all product + variant data.
+    #   • ADDITIONAL rows with the same Handle should carry ONLY extra images
+    #     (Handle + Image Src + Image Position + Image Alt Text).
+    #
+    # If variant fields (Option1 Value, Price, SKU, Inventory Qty, etc.) are
+    # present on those additional rows, Shopify treats each one as a NEW
+    # variant, and since they all say "Default Title", it rejects them with:
+    #     "Validation failed: The variant 'Default Title' already exists."
+    #
+    # This step blanks out all product/variant fields on rows 2, 3, 4… of
+    # each Handle, keeping only the image-related fields.
+    # ------------------------------------------------------------------
+    if handle_col:
+        # Sort so rows of the same product stay together, preserving order
+        df = df.reset_index(drop=True)
+
+        # Identify the FIRST occurrence of each Handle
+        first_row_mask = ~df[handle_col].duplicated(keep="first")
+        additional_row_mask = ~first_row_mask
+
+        # Also: rows with an EMPTY Handle should just be left alone
+        empty_handle_mask = df[handle_col].apply(lambda v: str(v).strip() == "")
+        additional_row_mask = additional_row_mask & (~empty_handle_mask)
+
+        stats["duplicate_variant_rows_fixed"] = int(additional_row_mask.sum())
+
+        # Columns that MUST be blank on additional image rows
+        cols_to_blank_on_extra_rows = [
+            title_col,
+            body_col,
+            vendor_col,
+            type_col,
+            tags_col,
+            published_col,
+            product_cat_col,
+            google_cat_col,
+            seo_title_col,
+            seo_desc_col,
+            gift_card_col,
+            status_col,
+            option1_name_col,
+            option1_value_col,
+            variant_sku_col,
+            variant_grams_col,
+            variant_inv_tracker_col,
+            variant_inv_qty := inventory_qty_col,
+            variant_inv_policy_col,
+            variant_fulfillment_col,
+            variant_price_col,
+            compare_price_col,
+            variant_requires_shipping_col,
+            variant_taxable_col,
+            variant_weight_unit_col,
+            variant_image_col,
+        ]
+
+        # Also blank Option2/Option3 if they exist
+        for extra_opt in [
+            "Option2 Name", "Option2 Value", "Option2 Linked To",
+            "Option3 Name", "Option3 Value", "Option3 Linked To",
+            "Option1 Linked To",
+            "Variant Barcode", "Variant Tax Code", "Cost per item",
+            "Included / United States", "Price / United States",
+            "Compare At Price / United States",
+            "Included / International", "Price / International",
+            "Compare At Price / International",
+            "Google Shopping / Gender", "Google Shopping / Age Group",
+            "Google Shopping / MPN", "Google Shopping / Condition",
+            "Google Shopping / Custom Product",
+            "Google Shopping / AdWords Grouping",
+            "Google Shopping / AdWords Labels",
+            "Google Shopping / Custom Label 0",
+            "Google Shopping / Custom Label 1",
+            "Google Shopping / Custom Label 2",
+            "Google Shopping / Custom Label 3",
+            "Google Shopping / Custom Label 4",
+        ]:
+            actual = _col(df, extra_opt)
+            if actual:
+                cols_to_blank_on_extra_rows.append(actual)
+
+        # De-duplicate and drop Nones
+        cols_to_blank_on_extra_rows = [
+            c for c in dict.fromkeys(cols_to_blank_on_extra_rows) if c
+        ]
+
+        # Do the blanking
+        for col in cols_to_blank_on_extra_rows:
+            if col in df.columns:
+                df.loc[additional_row_mask, col] = ""
 
     # ------------------------------------------------------------------
     # Final stats
